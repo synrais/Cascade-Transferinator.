@@ -292,7 +292,7 @@ class TransferEngine:
                 if self.conn:
                     with self.conn:
                         self.conn.execute("UPDATE files SET status='error' WHERE relpath=?", (rel,))
-                self._post("tick"); continue
+                self._post("tick", ok=False); continue
 
             ok, _ = self._copy_direct(src, dst, expect_size=fsize)
             if self.conn:
@@ -301,7 +301,8 @@ class TransferEngine:
                         "UPDATE files SET status=? WHERE relpath=?",
                         ("done" if ok else "error", rel),
                     )
-            self._post("tick")
+            # include result in tick payload for the no-DB (in-memory) path
+            self._post("tick", ok=ok)
 
         # Final summary
         if self.conn:
@@ -324,6 +325,11 @@ class App:
         self.worker: Optional[threading.Thread] = None
         self.engine: Optional[TransferEngine] = None
         self.banner_shown = False
+
+        # simple counters for the no-DB path
+        self._total_files = 0
+        self._done_files = 0
+        self._error_files = 0
 
         # Top: drop zones
         top = ttk.Frame(root, padding=12); top.pack(fill="x")
@@ -452,6 +458,11 @@ class App:
         if self.banner_shown:
             self._clear_log(); self.banner_shown = False
 
+        # reset no-DB counters for fresh run
+        self._total_files = 0
+        self._done_files = 0
+        self._error_files = 0
+
         use_resume = self.resume_var.get()
         auto_db = resume_db_path_for_pair(src, dst) if use_resume else None
         self.resume_path_lbl.config(text=str(auto_db) if auto_db else "")
@@ -502,8 +513,12 @@ class App:
 
                 elif kind == "summary":
                     total = payload.get("total_files", 0)
+                    # initialize counts for both paths
+                    self._total_files = total
+                    self._done_files = 0
+                    self._error_files = 0
                     self.pb_overall.config(maximum=max(1,total), value=0)
-                    self.lbl_summary.config(text=f"0/{total} done | 0 queued | 0 error")
+                    self.lbl_summary.config(text=f"0/{total} done | {total} queued | 0 error")
 
                 elif kind == "panel":
                     self.lbl_rel.config(text=f"Current file: {payload.get('rel','')}")
@@ -515,6 +530,7 @@ class App:
 
                 elif kind == "tick":
                     if self.engine and self.engine.conn:
+                        # DB-backed path: query counts
                         conn = self.engine.conn
                         total = conn.execute("SELECT COUNT(*) FROM files").fetchone()[0]
                         done  = conn.execute("SELECT COUNT(*) FROM files WHERE status='done'").fetchone()[0]
@@ -523,8 +539,14 @@ class App:
                         self.pb_overall.config(maximum=max(1,total), value=done)
                         self.lbl_summary.config(text=f"{done}/{total} done | {pend} queued | {errs} error")
                     else:
-                        cur = self.pb_overall["value"] + 1
-                        self.pb_overall.config(value=cur)
+                        # No-DB path: use payload.ok to track done/error
+                        if payload.get("ok", True):
+                            self._done_files += 1
+                        else:
+                            self._error_files += 1
+                        queued = max(0, self._total_files - self._done_files - self._error_files)
+                        self.pb_overall.config(maximum=max(1, self._total_files), value=self._done_files)
+                        self.lbl_summary.config(text=f"{self._done_files}/{self._total_files} done | {queued} queued | {self._error_files} error")
 
                 elif kind == "status":
                     self._log(payload.get("msg",""))
