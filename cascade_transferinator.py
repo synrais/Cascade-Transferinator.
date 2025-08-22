@@ -545,13 +545,20 @@ class App:
     # --- Log helpers ---
     def _show_banner_in_log(self):
         banner = (
-            "This tool copies files in a smooth, sequential flow.\n"
-            "It avoids choking the system or overfilling caches by processing one file at a time,\n"
-            "completing each folder in cascaded alphabetical order before moving to the next.\n"
-            "Use 'Save progress / resume log' to pause and resume later.\n"
-            "Drag and drop source and destination folders and press Start."
+            "- Copies files sequentially to avoid choking the system or overfilling caches.\n"
+            "- Processes one file at a time, completing each folder in cascaded alphabetical order.\n"
+            "- Skips hidden and system files — only copies what you can see.\n"
+            "- 'Save progress / resume log' option lets you pause and resume later.\n"
+            "- Simple drag-and-drop interface for source and destination folders.\n"
+            "- Durable writes using fsync ensure your data is safe, even during interruptions.\n\n"
+            "   Usage:\n"
+            "1. Drag and drop a source folder onto the source box.\n"
+            "2. Drag and drop a destination folder onto the destination box.\n"
+            "3. Press Start to begin the transfer."
         )
-        self._clear_log(); self._log(banner); self.banner_shown = True
+        self._clear_log()
+        self._log(banner)
+        self.banner_shown = True
 
     def _clear_log(self):
         self.log.config(state="normal"); self.log.delete("1.0", "end"); self.log.config(state="disabled")
